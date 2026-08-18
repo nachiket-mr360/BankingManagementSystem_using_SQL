@@ -288,7 +288,7 @@ class BankSystem:
     def update_account(self, account):
         return account.save_to_db()
     
-    def read_account(self, account_number, pin):
+    def delete_account(self, account_number, pin):
         account = Account.load_from_db(account_number, pin)
         if account:
             success = account.delete_from_db()
@@ -297,3 +297,56 @@ class BankSystem:
                 account_number,account.get_name(), "Account Deleted",0.0 )
             return True
         return False
+   
+    def deposit(self, account_number, pin,amount):
+        account = Account.load_from_db(account_number, pin)
+        if account and account.deposit(amount):
+            Audit.log_action(
+                account_number,account.get_name(), "amount deposited",amount )
+            return True
+        return False
+    
+    def withdraw(self, account_number, pin,amount):
+        account = Account.load_from_db(account_number, pin)
+        if account and account.withdraw(amount):
+            Audit.log_action(
+                account_number,account.get_name(), "amount withdrawn",amount )
+            return True
+        return False
+    
+    def get_account_balance(self, account_number, pin):
+            account = Account.load_from_db(account_number, pin)
+            if account:
+                Audit.log_action(
+                    account_number,account.get_name(), "Balance Checked",0.0)
+                return account.get_balance()
+            return None
+    
+    def get_single_audit_logs(self, account_number):
+                return Audit.get_single_audit_log(account_number)
+        
+    def get_all_audit_logs(self):
+                return Audit.get_all_audit_log()
+            
+    def clear_single_audit_logs(self, account_number):
+                return Audit.clear_single_audit_log(account_number)
+        
+    def clear_all_audit_logs(self):
+                return Audit.clear_all_audit_log()
+            
+    
+        
+# valid amount input
+def get_valid_amount(prompt):
+    while True:
+        try:
+            amount = float(input(prompt))
+            if amount<= 0 :
+                print("amount must be greater than zero")
+                continue
+            return amount
+        except ValueError:
+            print("please enter a valid amount in numbers ")
+
+    
+    
