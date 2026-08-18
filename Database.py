@@ -9,7 +9,7 @@ def connect_to_database():
         con = psycopg2.connect(
             host=os.getenv("DB_HOST", "localhost"),
             user=os.getenv("DB_USER", "postgres"),
-            database=os.getenv("DB_NAME", "ecommerce"),
+            database=os.getenv("DB_NAME", "bankingSystem"),
             password=os.getenv("DB_PASSWORD"),
             port=os.getenv("DB_PORT", "5432")
         )
