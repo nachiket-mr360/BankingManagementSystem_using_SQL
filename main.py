@@ -1,13 +1,14 @@
 from Database import connect_to_database
 import string
 import hashlib
+import random
 
 #encrypt and varify pin
-def __hash_pin(pin):
+def hash_pin(pin):
     return hashlib.sha256(pin.encode()).hexdigest()
 
-def __verify_pin(input_pin, stored_hash):
-    return __hash_pin(input_pin) == stored_hash
+def verify_pin(input_pin, stored_hash):
+    return hash_pin(input_pin) == stored_hash
 
 
 #db tables initialize
@@ -15,39 +16,40 @@ def initilize_tables():
     connection = connect_to_database()
     if not connection:
         return False
-        try:
-            cursor = connection.cursor()
-            
-            create_account_table = '''
-            create table if not exists accounts(
-                account_number varchar(50) primary key,
-                name varchar(100) not null,
-                pin varchar(64) not null,
-                balance decimal(15,2) default 0.00,
-                create_at timestamp default currect_timestamp
-            );
-            '''
-            create_audit_table = '''
-            create table if not exists audit(
-                id serial primary key,
-                account_number varchar(50),
-                holder_name varchar(100),
-                action varchar(100) not null,
-                amount decimal(15,2) default 0.00,
-                time_stamp timestamp default currect_timestamp,
-                foreign key (account_number) references accounts(account_number)
-            );
-            '''
-            cursor.execute(create_account_table)
-            cursor.execute(create_audit_table)
-            connection.commit()
-            cursor.close()
-            
-            
-        except Exception as e:
-            print(f'Error occured while intilizing table {e}')
-            return False
-    
+    try:
+        cursor = connection.cursor()
+        
+        create_account_table = '''
+        create table if not exists accounts(
+            account_number varchar(50) primary key,
+            name varchar(100) not null,
+            pin varchar(64) not null,
+            balance decimal(15,2) default 0.00,
+            create_at timestamp default CURRENT_TIMESTAMP
+        );
+        '''
+        create_audit_table = '''
+        create table if not exists audit(
+            id serial primary key,
+            account_number varchar(50),
+            holder_name varchar(100),
+            action varchar(100) not null,
+            amount decimal(15,2) default 0.00,
+            time_stamp timestamp default CURRENT_TIMESTAMP,
+            foreign key (account_number) references accounts(account_number)
+        );
+        '''
+        cursor.execute(create_account_table)
+        cursor.execute(create_audit_table)
+        connection.commit()
+        cursor.close()
+        return True
+        
+        
+    except Exception as e:
+        print(f'Error occured while intilizing table {e}')
+        return False
+
 #account class
 class Account:
     def __init__(self, name="",pin="",account_number=""):
@@ -55,7 +57,7 @@ class Account:
             account_number if account_number else  self.__generate_account_number()           
         )
         self.__name = name
-        self.__pin =__hash_pin(pin)
+        self.__pin =hash_pin(pin)
         self.__balance = 0.0
         
     @staticmethod
@@ -76,8 +78,10 @@ class Account:
     
     def set_name(self,name):
         self.__name = name  
-    def set_pin_hash(self,pin):
-        self.__pin = __hash_pin(pin)
+    def set_pin_hash(self,pin_hash):
+        self.__pin = pin_hash
+    def set_pin(self, pin):
+        self.__pin= hash_pin(pin)
     def set_balance(self,balance):
         self.__balance = balance
     
@@ -102,15 +106,16 @@ class Account:
             return False
         try:
             cursor = connection.cursor()
-            cursor.execute('select account_number, name, pin, balance from accounts where account_number=%s',(account_number))
+            cursor.execute('select account_number, name, pin, balance from accounts where account_number=%s',(account_number,))
             result = cursor.fetchone()
             connection.commit()
             cursor.close()
             if result:
                 stored_pin_hash = result[2]
-                if __verify_pin(pin,stored_pin_hash):
+                if verify_pin(pin,stored_pin_hash):
                     account = cls(result[1],"",result[0])
-                    account_number.set_balance(float(result[3]))
+                    account.set_pin_hash(stored_pin_hash)
+                    account.set_balance(float(result[3]))
                     return account
             
         except Exception as error:
@@ -126,7 +131,7 @@ class Account:
             cursor.execute(
                 '''
                 insert into accounts (account_number, name, pin, balance)
-                vales (%s,%s,%s,%s)
+                values (%s,%s,%s,%s)
                 on conflict(account_number)
                 do update set name = %s , pin = %s, balance= %s
                 ''',
@@ -138,14 +143,16 @@ class Account:
             return True
         except Exception as error:
             print(f'Error occured while save {error}')
-            return None
+            return False
     
     def delete_from_db(self):
         connection = connect_to_database()
+        
         if not connection:
             return False
         try:
             cursor = connection.cursor()
+            cursor.execute("delete from audit where account_number = %s",(self.__account_number,))
             cursor.execute('delete from accounts where account_number = %s',(self.__account_number,))
             connection.commit()
             cursor.close()
@@ -164,7 +171,7 @@ class Audit:
         try:
             cursor = connection.cursor()
             cursor.execute('''
-                           inset into audit (account_number, holder_name, action,amount) vales 
+                           insert into audit (account_number, holder_name, action,amount) values 
                            (%s,%s,%s,%s)
                            ''',(account_number,holder_name,action,amount))
             connection.commit()
@@ -182,7 +189,7 @@ class Audit:
         try:
             cursor = connection.cursor()
             cursor.execute('''
-                           select id, holder_name, actionm amount, time_stamp from audit where account_number = %s
+                           select id, holder_name, action, amount, time_stamp from audit where account_number = %s
                            order by time_stamp desc
                            ''',(account_number,))
             results = cursor.fetchall()
@@ -210,7 +217,7 @@ class Audit:
         try:
             cursor = connection.cursor()
             cursor.execute('''
-                           select id, holder_name, actionm amount, time_stamp from audit
+                           select id, holder_name, action, amount, time_stamp from audit
                            order by time_stamp desc
                            ''')
             results = cursor.fetchall()
@@ -270,7 +277,11 @@ class Audit:
 
 class BankSystem:
     def __init__(self):
-        pass
+        result = initilize_tables()
+        print("Table initialization result:", result)
+
+        if not result:
+            raise Exception("Database tables could not be initialized")
     def create_account(self, name, pin):
         account = Account(name, pin)
         if account.save_to_db():
@@ -301,17 +312,19 @@ class BankSystem:
     def deposit(self, account_number, pin,amount):
         account = Account.load_from_db(account_number, pin)
         if account and account.deposit(amount):
-            Audit.log_action(
+            if account.save_to_db():
+                Audit.log_action(
                 account_number,account.get_name(), "amount deposited",amount )
-            return True
+                return True
         return False
     
     def withdraw(self, account_number, pin,amount):
         account = Account.load_from_db(account_number, pin)
         if account and account.withdraw(amount):
-            Audit.log_action(
+            if account.save_to_db():
+                Audit.log_action(
                 account_number,account.get_name(), "amount withdrawn",amount )
-            return True
+                return True
         return False
     
     def get_account_balance(self, account_number, pin):
@@ -348,5 +361,264 @@ def get_valid_amount(prompt):
         except ValueError:
             print("please enter a valid amount in numbers ")
 
+
+
+#CLI menu
+def create_account_cli(bank):
+    print("="*40)
+    print("Create New Account")
+    print("="*40)
+    name = input("Enter your name: ").strip()
+    if not name:
+        print("Name can not be empty/ignored.")
+        input("press enter to continue...")
+        return        
+    pin = input("Enter 4-digit pin: ").strip()
+    if len(pin) !=4 or not pin.isdigit():
+        print("PIN must be 4-digit number.")
+        input("Press enter to continue... ")
+        return
+    confirm_pin = input("confirm your PIN: ").strip()
+    if pin != confirm_pin:
+        print("PIN is not matching.")
+        print("Press enter to continue..")
+        return
+    account = bank.create_account(name,pin)
+    if account:
+        print(f"\nAccount successfully created")
+        print(f"\nAccount number: {account.get_account_number()}")
+        print(f"Save your Account Number and PIN securely")
+        
+        
+    else:
+        print(f"\nAccount not created , try again.")
+
+    input("press enter to continue...")
+
+#check balance
+def check_balance_cli(bank,account,pin):
+    print("="*40)
+    print("Check your balance")
+    print("="*40)
+    name = input("Enter your name: ").strip()
+    balance = bank.get_account_balance(account.get_account_number(),pin)
+    
+    if balance is not None:
+        print(f"\nCurrent Balance: {balance:.2f}")       
+        
+    else:
+        print(f"\nError checking balance , try again.")
+
+    input("press enter to continue...")
+    
+
+def deposit_money_cli(bank,account,pin):
+    print("="*40)
+    print("Deposit Money")
+    print("="*40)
+    amount = get_valid_amount("Enter deposit amount: ")
+    if bank.deposit(account.get_account_number(),pin, amount):
+        print(f"{amount:.2f} successfully deposited") 
+        balance= bank.get_account_balance(account.get_account_number(),pin)
+        if balance is not None:
+            print(f"New balance: {balance:.2f}") 
+        else:
+            print("Error checking new balance.")  
+    else:
+        print(f"\nError depositing balance , try again.")
+
+    input("press enter to continue...")
+        
+
+def withdraw_money_cli(bank,account,pin):
+    print("="*40)
+    print("withdraw Money")
+    print("="*40)
+    
+    amount = get_valid_amount("Enter withdraw amount: ")
+    if bank.withdraw(account.get_account_number(),pin, amount):
+        print(f"{amount:.2f} successfully withdrawn") 
+        balance= bank.get_account_balance(account.get_account_number(),pin)
+        if balance is not None:
+            print(f"New balance: {balance:.2f}") 
+        else:
+            print("Error checking balance")
+        
+    else:
+        print(f"\nError withdrawning balance , try again.")
+
+    input("press enter to continue...")
+
+def transaction_history_cli(bank,account,pin):
+    print("="*40)
+    print("Account Transactions")
+    print("="*40)
+    logs = bank.get_single_audit_logs(account.get_account_number())
+    if not logs:
+        print("No transaction found")
+    else:
+        for log in logs:
+            print(f"{log['time_stamp']} {log['action']}  - {log['amount']:.2f} by {log['holder_name']}")
+    input("Press enter to continue..")
+
+def update_account_cli(bank,account,pin):
+    print("="*40)
+    print("Update Account Info")
+    print("="*40)
+    new_name = input("Enter your name: ").strip()
+    if new_name:
+        account.set_name(new_name)
+        if bank.update_account(account):
+            Audit.log_action(account.get_account_number(), account.get_name(),"Account Info updated", 0.0)
+            print("name updated Successfully")
+        else:
+            print("error updating account")
+    else:    
+        print("no changes made.")
+
+    input("press enter to continue...")
+def change_pin_logout_cli(bank,account,pin):
+    print("="*40)
+    print("Update Account PIN")
+    print("="*40)
+    old_pin = input("Enter current pin: ").strip()
+    if old_pin !=pin:
+        print("Inccorect current pin")
+        print("Press enter to continue...")
+        return False
     
     
+    new_pin = input("Enter 4digit new pin ").strip()
+    if len(new_pin) !=4 or not new_pin.isdigit():
+        print("PIN must be 4-digit number.")
+        input("Press enter to continue... ")
+        return
+    confirm_pin = input("confirm your PIN: ").strip()
+    if new_pin != confirm_pin:
+        print("PIN is not matching.")
+        print("Press enter to continue..")
+        
+    account.set_pin(new_pin)
+    if bank.update_account(account):
+            Audit.log_action(account.get_account_number(), account.get_name(),"Account PIN updated", 0.0)
+            print("PIN updated Successfully, you will be logged out")
+            return True
+    
+    print("Error updating the pin.")
+    input("press enter to continue...")
+    
+
+def delete_account_cli(bank,account,pin):
+    print("="*40)
+    print("Close Account")
+    print("="*40)
+    confirm = input("are your sure, you want to delete ths account? (yes/no) ").strip().lower()
+    if confirm !="yes":
+        print("Account Deletion Cancelled.")
+        input("Press enter to continue..")
+        return False
+    
+    
+    re_pin = input("re-enter your Pin to confirm: ").strip()
+    if re_pin != pin:
+        print("PIN is not matching account not deleted.")
+        print("Press enter to continue..")
+    if bank.delete_account(account.get_account_number(),pin):
+        print("Account closed successfully.")
+        print("press enter to continue...")
+        exit()
+    print("Error closing account pin, try again..")
+    input("Press enter to continue.")
+    return False    
+        
+def login_account_cli(bank):
+    print("="*40)
+    print("Create New Account")
+    print("="*40)
+    account_number = input("Enter your account_number: ").strip()
+    if not account_number:
+        print("account number can not be empty/ignored.")
+        input("press enter to continue...")
+        return        
+    pin = input("Enter 4-digit pin: ").strip()
+    account = bank.read_account(account_number,pin)
+    
+    if not account:
+        print("Wrong Credientials.")
+        input("Press enter to continue... ")
+        return
+    
+    while True:
+        print("="*40)
+        print(f"Welcome, {account.get_name()}!")
+        print(f"Account Number:  , {account.get_account_number()}!")
+        print("="*40)
+        print('''
+              1. Check Balance
+              2. Deposit Balance
+              3. Withdraw Balance
+              4. Trnsaction History
+              5. Update Account Info
+              6. Change PIN
+              7. Delete Account
+              8. logout''')
+        
+        print("="*40)
+        choice = int(input("Enter your choice(0-6):"))
+        if choice==1:
+            check_balance_cli(bank,account,pin)
+        elif choice ==2:
+            deposit_money_cli(bank, account,pin)
+        elif choice == 3:
+            withdraw_money_cli(bank, account,pin)
+        elif choice == 4:
+            transaction_history_cli(bank, account,pin)
+        elif choice == 5:
+            update_account_cli(bank, account,pin)
+        elif choice ==6:
+            change_pin_logout_cli(bank,account,pin)
+        elif choice ==7:
+            delete_account_cli(bank,account,pin)   
+        elif choice ==9:
+            print("Thank you so much for using our services, do visit again.")
+            exit()
+        else:
+            print("please provide a valid choice , try again.")
+        
+                
+                
+
+#main menu of CLI
+def main_menu_cli():
+    bank = BankSystem()
+    
+    while True:
+        print("="*40)
+        print("Bank Management System")
+        print("="*40)
+        print('''
+              1. New Account
+              2. Login Account
+              ''')
+        # print("="*10, "Admins Only ","="*10)
+        # print('''
+        #       3. View Single Audit Log
+        #       4. View All Audit Logs
+        #       5. Clear Single Audit Log
+        #       6.Clear All Audit Logs''')
+        print("0.Exit")
+        print("="*40)
+        choice = int(input("Enter your choice(0-6):"))
+        if choice==1:
+            create_account_cli(bank)
+        elif choice ==2:
+            login_account_cli(bank)
+        elif choice ==0:
+            print("Thank you so much for using our services, do visit again.")
+        else:
+            print("please provide a valid choice , try again.")
+        
+
+if __name__=="__main__":
+    main_menu_cli()
+
