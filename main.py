@@ -526,7 +526,6 @@ def delete_account_cli(bank,account,pin):
     if bank.delete_account(account.get_account_number(),pin):
         print("Account closed successfully.")
         print("press enter to continue...")
-        exit()
     print("Error closing account pin, try again..")
     input("Press enter to continue.")
     return False    
@@ -576,9 +575,11 @@ def login_account_cli(bank):
         elif choice == 5:
             update_account_cli(bank, account,pin)
         elif choice ==6:
-            change_pin_logout_cli(bank,account,pin)
+            if change_pin_logout_cli(bank,account,pin):
+                break
         elif choice ==7:
-            delete_account_cli(bank,account,pin)   
+            if delete_account_cli(bank,account,pin):
+                break   
         elif choice ==9:
             print("Thank you so much for using our services, do visit again.")
             exit()
