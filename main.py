@@ -1,625 +1,1664 @@
-from Database import connect_to_database
-import string
-import hashlib
-import random
-
-#encrypt and varify pin
-def hash_pin(pin):
-    return hashlib.sha256(pin.encode()).hexdigest()
-
-def verify_pin(input_pin, stored_hash):
-    return hash_pin(input_pin) == stored_hash
+import streamlit as st
+import time
+import textwrap
+from datetime import datetime
+from CLI_main import BankSystem, Audit
 
 
-#db tables initialize
-def initilize_tables():
-    connection = connect_to_database()
-    if not connection:
-        return False
-    try:
-        cursor = connection.cursor()
-        
-        create_account_table = '''
-        create table if not exists accounts(
-            account_number varchar(50) primary key,
-            name varchar(100) not null,
-            pin varchar(64) not null,
-            balance decimal(15,2) default 0.00,
-            create_at timestamp default CURRENT_TIMESTAMP
-        );
-        '''
-        create_audit_table = '''
-        create table if not exists audit(
-            id serial primary key,
-            account_number varchar(50),
-            holder_name varchar(100),
-            action varchar(100) not null,
-            amount decimal(15,2) default 0.00,
-            time_stamp timestamp default CURRENT_TIMESTAMP,
-            foreign key (account_number) references accounts(account_number)
-        );
-        '''
-        cursor.execute(create_account_table)
-        cursor.execute(create_audit_table)
-        connection.commit()
-        cursor.close()
-        return True
-        
-        
-    except Exception as e:
-        print(f'Error occured while intilizing table {e}')
-        return False
+# ============================================================
+# PAGE CONFIG
+# ============================================================
+st.set_page_config(
+    page_title="MyBank | Banking Management System",
+    page_icon="🏦",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        "Get help": None,
+        "Report a bug": None,
+        "About": None,
+    }
+)
 
-#account class
-class Account:
-    def __init__(self, name="",pin="",account_number=""):
-        self.__account_number = (
-            account_number if account_number else  self.__generate_account_number()           
+
+# ============================================================
+# PROFESSIONAL FINTECH UI
+# ============================================================
+st.markdown(textwrap.dedent("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+:root {
+    --bg: #07121f;
+    --surface: #0d1b2d;
+    --surface-2: #12233a;
+    --border: #21334a;
+    --text: #f5f7fa;
+    --muted: #9aaabd;
+    --primary: #19c99a;
+    --primary-dark: #0fae88;
+    --cyan: #2bc6df;
+    --danger: #ef6b7a;
+    --warning: #f3b53f;
+}
+
+* { box-sizing: border-box; }
+
+html, body, .stApp {
+    background: var(--bg) !important;
+    color: var(--text) !important;
+    font-family: 'DM Sans', sans-serif !important;
+}
+
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stMainBlockContainer"],
+.main,
+.block-container {
+    background: transparent !important;
+}
+
+.block-container {
+    width: 100% !important;
+    max-width: 1380px !important;
+    padding: 24px clamp(14px, 2.4vw, 34px) 42px !important;
+}
+
+[data-testid="stHeader"] {
+    background: rgba(7,18,31,.92) !important;
+}
+
+[data-testid="stToolbar"] { display: none; }
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', sans-serif !important;
+    color: var(--text) !important;
+}
+
+p, label, [data-testid="stCaptionContainer"] {
+    color: var(--muted) !important;
+}
+
+/* -------------------- HERO -------------------- */
+
+.hero {
+    position: relative;
+    overflow: hidden;
+    min-height: 205px;
+    padding: 34px clamp(24px, 4vw, 52px);
+    margin-bottom: 26px;
+    border: 1px solid #1d6d69;
+    border-radius: 22px;
+    background:
+        linear-gradient(120deg, rgba(19,64,66,.68), rgba(9,30,45,.96) 60%),
+        #0b1c2b;
+    box-shadow: 0 16px 42px rgba(0,0,0,.20);
+}
+
+.hero::before {
+    content: "";
+    position: absolute;
+    width: 260px;
+    height: 260px;
+    right: -120px;
+    top: -145px;
+    border-radius: 50%;
+    background: rgba(25,201,154,.08);
+}
+
+.hero::after {
+    content: "";
+    position: absolute;
+    width: 190px;
+    height: 190px;
+    left: -95px;
+    bottom: -130px;
+    border: 1px solid rgba(43,198,223,.16);
+    border-radius: 50%;
+}
+
+.hero-content {
+    position: relative;
+    z-index: 1;
+}
+
+.hero-badge {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 7px 12px;
+    margin-bottom: 15px;
+    border: 1px solid rgba(25,201,154,.45);
+    border-radius: 999px;
+    background: rgba(25,201,154,.07);
+    color: #58e0ba;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .65px;
+    text-transform: uppercase;
+}
+
+.hero h1 {
+    margin: 0 !important;
+    font-size: clamp(31px, 4.2vw, 53px) !important;
+    line-height: 1.08 !important;
+    letter-spacing: -1.7px;
+    background: linear-gradient(90deg, #61e2ba, #35c9df);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.hero p {
+    max-width: 800px;
+    margin: 13px 0 0;
+    color: #aab9ca !important;
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+/* -------------------- AUTH -------------------- */
+
+.auth-surface {
+    min-height: 420px;
+    padding: 30px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: linear-gradient(145deg, #102239, #0b192b);
+}
+
+.auth-title {
+    margin: 0 0 8px;
+    color: var(--text);
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 27px;
+    font-weight: 700;
+}
+
+.auth-copy {
+    color: #aab9ca;
+    line-height: 1.7;
+    font-size: 14px;
+}
+
+.feature-list {
+    display: grid;
+    gap: 15px;
+    margin-top: 28px;
+}
+
+.feature {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.feature-icon {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    border: 1px solid rgba(25,201,154,.18);
+    border-radius: 9px;
+    background: rgba(25,201,154,.07);
+}
+
+.feature-text strong {
+    display: block;
+    margin-bottom: 3px;
+    color: #eaf0f6;
+    font-size: 13px;
+}
+
+.feature-text span {
+    display: block;
+    color: #899bb0;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.login-panel {
+    padding: 26px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: #0d1b2d;
+}
+
+.login-title {
+    color: #5ee0bb;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 27px;
+    font-weight: 700;
+}
+
+.login-copy {
+    margin: 5px 0 22px;
+    color: #899bb0;
+    font-size: 13px;
+}
+
+/* -------------------- ACCOUNT CREATED -------------------- */
+
+.account-created {
+    padding: 18px 20px;
+    margin-bottom: 22px;
+    border: 1px solid rgba(25,201,154,.34);
+    border-radius: 16px;
+    background: #0d282b;
+}
+
+.account-created-label {
+    color: #62dfba;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .6px;
+}
+
+.account-created-number {
+    display: block;
+    margin: 8px 0;
+    color: #e9fff8;
+    font-family: monospace;
+    font-size: 25px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    overflow-wrap: anywhere;
+}
+
+.account-created-note {
+    color: #e2b458;
+    font-size: 12px;
+}
+
+.account-created-bottom {
+    margin-top: -10px;
+    border-top: 0;
+    border-radius: 0 0 16px 16px;
+}
+
+div[data-testid="stCodeBlock"] {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+div[data-testid="stCodeBlock"] pre {
+    border: 1px solid rgba(25,201,154,.34) !important;
+    border-top: 0 !important;
+    border-radius: 0 !important;
+    background: #102c30 !important;
+    color: #e9fff8 !important;
+    padding: 13px 16px !important;
+}
+
+div[data-testid="stCodeBlock"] code {
+    color: #e9fff8 !important;
+    font-family: 'Space Grotesk', monospace !important;
+    font-size: 20px !important;
+    font-weight: 700 !important;
+    letter-spacing: 1px !important;
+}
+
+/* -------------------- HEADINGS -------------------- */
+
+.page-heading {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    margin: 5px 0 4px;
+    color: var(--text);
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: clamp(24px, 2.8vw, 31px);
+    font-weight: 700;
+}
+
+.page-heading::before {
+    content: "";
+    width: 4px;
+    height: 28px;
+    border-radius: 4px;
+    background: linear-gradient(#19c99a, #2bc6df);
+}
+
+.page-subtitle {
+    margin: 0 0 20px;
+    color: #8799ad;
+    font-size: 13px;
+}
+
+/* -------------------- CARDS -------------------- */
+
+.surface {
+    padding: 25px;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: #0d1b2d;
+    box-shadow: 0 14px 35px rgba(0,0,0,.13);
+}
+
+.surface-title {
+    margin-bottom: 7px;
+    color: var(--text);
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.surface-copy {
+    color: #91a2b5;
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+/* -------------------- METRICS -------------------- */
+
+.metric {
+    height: 100%;
+    padding: 21px;
+    border: 1px solid var(--border);
+    border-radius: 17px;
+    background: #0d1b2d;
+    box-shadow: 0 12px 28px rgba(0,0,0,.13);
+    transition: transform .18s ease, border-color .18s ease;
+}
+
+.metric:hover {
+    transform: translateY(-3px);
+    border-color: #28516a;
+}
+
+.metric-label {
+    color: #899bb0;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .75px;
+    text-transform: uppercase;
+}
+
+.metric-value {
+    margin-top: 8px;
+    color: #51dbb2;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: clamp(25px, 3vw, 34px);
+    font-weight: 700;
+}
+
+.metric-value.cyan { color: #45cce2; }
+.metric-value.orange { color: #f29a45; }
+
+/* -------------------- BUTTONS -------------------- */
+
+div[data-testid="stButton"] > button {
+    width: 100%;
+    min-height: 45px;
+    border: 1px solid rgba(25,201,154,.25) !important;
+    border-radius: 11px !important;
+    background: linear-gradient(90deg, #15b98f, #109db8) !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    box-shadow: none !important;
+    transition: transform .16s ease, filter .16s ease;
+}
+
+div[data-testid="stButton"] > button:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.07);
+}
+
+div[data-testid="stButton"] > button p {
+    color: #ffffff !important;
+}
+
+/* -------------------- INPUTS -------------------- */
+
+div[data-testid="stTextInput"] input,
+div[data-testid="stNumberInput"] input {
+    min-height: 47px !important;
+    background: #14243a !important;
+    border: 1px solid #30445d !important;
+    border-radius: 10px !important;
+    color: #f8fafc !important;
+    font-size: 14px !important;
+}
+
+div[data-testid="stTextInput"] input:focus,
+div[data-testid="stNumberInput"] input:focus {
+    border-color: #25caa0 !important;
+    box-shadow: 0 0 0 2px rgba(25,201,154,.12) !important;
+}
+
+div[data-testid="stTextInput"] input::placeholder,
+div[data-testid="stNumberInput"] input::placeholder {
+    color: #71839a !important;
+}
+
+div[data-testid="stNumberInput"] button {
+    background: #1b2c43 !important;
+    color: #b8c6d6 !important;
+    border: none !important;
+}
+
+/* -------------------- TABS -------------------- */
+
+div[data-testid="stTabs"] [role="tablist"] {
+    gap: 4px;
+    border-bottom: 1px solid #1c2c40;
+}
+
+div[data-testid="stTabs"] button {
+    color: #91a1b4 !important;
+    font-weight: 600 !important;
+}
+
+div[data-testid="stTabs"] button[aria-selected="true"] {
+    color: #5fe0bc !important;
+}
+
+/* -------------------- SIDEBAR -------------------- */
+
+[data-testid="stSidebar"] {
+    background: #06111e !important;
+    border-right: 1px solid #15263a;
+}
+
+[data-testid="stSidebar"] > div:first-child {
+    padding: 20px 14px !important;
+}
+
+.sidebar-brand {
+    margin-bottom: 16px;
+    color: #5ee0bb;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.sidebar-account {
+    padding: 14px;
+    border: 1px solid #1a2b3f;
+    border-radius: 13px;
+    background: #0b1929;
+}
+
+.sidebar-name {
+    color: #f3f6f9;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.sidebar-number {
+    margin-top: 6px;
+    color: #42c8df;
+    font-family: monospace;
+    font-size: 10px;
+    overflow-wrap: anywhere;
+}
+
+.sidebar-status {
+    margin-top: 9px;
+    color: #54dcb5;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.sidebar-divider {
+    height: 1px;
+    margin: 16px 0;
+    background: #17283b;
+}
+
+[data-testid="stSidebar"] div[data-testid="stButton"] > button {
+    min-height: 42px !important;
+    margin: 2px 0 !important;
+    border: 1px solid transparent !important;
+    background: transparent !important;
+    color: #a9b8c8 !important;
+    box-shadow: none !important;
+    text-align: left !important;
+}
+
+[data-testid="stSidebar"] div[data-testid="stButton"] > button:hover {
+    background: #10263a !important;
+    border-color: #1b4050 !important;
+    color: #e9f3f8 !important;
+    transform: none;
+}
+
+/* -------------------- TRANSACTIONS -------------------- */
+
+.transaction {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 15px 17px;
+    margin-bottom: 9px;
+    border: 1px solid #1a2a3e;
+    border-radius: 13px;
+    background: #0c1a2b;
+}
+
+.transaction-main {
+    min-width: 0;
+}
+
+.transaction-action {
+    color: #e7edf4;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.transaction-time {
+    margin-top: 4px;
+    color: #71839a;
+    font-size: 10px;
+}
+
+.transaction-amount {
+    white-space: nowrap;
+    font-family: monospace;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+/* -------------------- NOTICES -------------------- */
+
+.notice {
+    padding: 13px 15px;
+    border: 1px solid #1d3e4b;
+    border-radius: 11px;
+    background: #0b202b;
+    color: #9cc3ce;
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.danger-zone {
+    padding: 18px;
+    border: 1px solid rgba(239,107,122,.22);
+    border-radius: 14px;
+    background: rgba(239,107,122,.055);
+}
+
+.danger-zone-title {
+    color: #f29aa5;
+    font-weight: 700;
+}
+
+.danger-zone-copy {
+    margin-top: 5px;
+    color: #9aa9ba;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+/* -------------------- FOOTER -------------------- */
+
+.footer {
+    margin-top: 35px;
+    padding-top: 18px;
+    border-top: 1px solid #15263a;
+    color: #617389;
+    font-size: 10px;
+    text-align: center;
+}
+
+/* -------------------- RESPONSIVE -------------------- */
+
+@media (max-width: 1000px) {
+    .block-container {
+        padding: 20px 18px 35px !important;
+    }
+
+    .hero {
+        min-height: 190px;
+    }
+
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+    }
+
+    [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+        min-width: min(100%, 360px) !important;
+        flex: 1 1 360px !important;
+    }
+}
+
+@media (max-width: 700px) {
+    .block-container {
+        padding: 14px 12px 30px !important;
+    }
+
+    .hero {
+        min-height: 175px;
+        padding: 25px 20px;
+        border-radius: 18px;
+    }
+
+    .hero h1 {
+        font-size: 31px !important;
+        letter-spacing: -1px;
+    }
+
+    .hero p {
+        font-size: 12px;
+    }
+
+    .auth-surface,
+    .login-panel,
+    .surface {
+        padding: 19px;
+        border-radius: 16px;
+    }
+
+    .transaction {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .transaction-amount {
+        align-self: flex-end;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+</style>
+"""), unsafe_allow_html=True)
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+defaults = {
+    "account": None,
+    "pin": None,
+    "page": "Dashboard",
+    "created_account_number": None,
+}
+
+for key, value in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+
+# ============================================================
+# DATABASE
+# ============================================================
+@st.cache_resource
+def get_bank():
+    return BankSystem()
+
+
+try:
+    bank = get_bank()
+except Exception as e:
+    st.error(f"Database connection failed: {e}")
+    st.stop()
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+def money(value):
+    return f"₹{float(value):,.2f}"
+
+
+def refresh_account():
+    if st.session_state.account and st.session_state.pin:
+        fresh = bank.read_account(
+            st.session_state.account.get_account_number(),
+            st.session_state.pin
         )
-        self.__name = name
-        self.__pin =hash_pin(pin)
-        self.__balance = 0.0
-        
-    @staticmethod
-    def __generate_account_number():
-        return "".join(random.choices(string.ascii_uppercase+string.digits,k=10))  
-    
-    #getters
-    def get_account_number(self):
-        return self.__account_number
-    def get_name(self):
-        return self.__name  
-    def get_pin_hash(self):
-        return self.__pin
-    def get_balance(self):
-        return self.__balance
-    
-    #setters
-    
-    def set_name(self,name):
-        self.__name = name  
-    def set_pin_hash(self,pin_hash):
-        self.__pin = pin_hash
-    def set_pin(self, pin):
-        self.__pin= hash_pin(pin)
-    def set_balance(self,balance):
-        self.__balance = balance
-    
-    #utility
-    def deposit(self,amount):
-        if amount <=0:
-            return False
-        self.__balance += amount
-        return True
-    
-    def withdraw(self,ammount):
-        if ammount <=0 or ammount > self.__balance:
-            return False
-        self.__balance -= ammount
-        return True
-    
-    #database crud
-    @classmethod
-    def load_from_db(cls,account_number,pin):
-        connection = connect_to_database()
-        if not connection:
-            return False
-        try:
-            cursor = connection.cursor()
-            cursor.execute('select account_number, name, pin, balance from accounts where account_number=%s',(account_number,))
-            result = cursor.fetchone()
-            connection.commit()
-            cursor.close()
-            if result:
-                stored_pin_hash = result[2]
-                if verify_pin(pin,stored_pin_hash):
-                    account = cls(result[1],"",result[0])
-                    account.set_pin_hash(stored_pin_hash)
-                    account.set_balance(float(result[3]))
-                    return account
-            
-        except Exception as error:
-            print(f'Error loading account {error}')
-            return None
-    
-    def save_to_db(self):
-        connection = connect_to_database()
-        if not connection:
-            return False
-        try:
-            cursor = connection.cursor()
-            cursor.execute(
-                '''
-                insert into accounts (account_number, name, pin, balance)
-                values (%s,%s,%s,%s)
-                on conflict(account_number)
-                do update set name = %s , pin = %s, balance= %s
-                ''',
-                (self.__account_number, self.__name, self.__pin, self.__balance,self.__name, self.__pin, self.__balance )
-                
-            )
-            connection.commit()
-            cursor.close()
-            return True
-        except Exception as error:
-            print(f'Error occured while save {error}')
-            return False
-    
-    def delete_from_db(self):
-        connection = connect_to_database()
-        
-        if not connection:
-            return False
-        try:
-            cursor = connection.cursor()
-            cursor.execute("delete from audit where account_number = %s",(self.__account_number,))
-            cursor.execute('delete from accounts where account_number = %s',(self.__account_number,))
-            connection.commit()
-            cursor.close()
-            return True
-        except Exception as error:
-            print(f'Error occured in delete as {error}')
-            return None
-
-#audit class
-class Audit:    
-    @staticmethod
-    def log_action(account_number, holder_name,action, amount=0.0):
-        connection = connect_to_database()
-        if not connection:
-            return False
-        try:
-            cursor = connection.cursor()
-            cursor.execute('''
-                           insert into audit (account_number, holder_name, action,amount) values 
-                           (%s,%s,%s,%s)
-                           ''',(account_number,holder_name,action,amount))
-            connection.commit()
-            cursor.close()
-            return True
-        except Exception as error:
-            print(f'Error occured in log actions as {error}')
-            return None
-
-    @staticmethod
-    def get_single_audit_log(account_number):
-        connection = connect_to_database()
-        if not connection:
-            return []
-        try:
-            cursor = connection.cursor()
-            cursor.execute('''
-                           select id, holder_name, action, amount, time_stamp from audit where account_number = %s
-                           order by time_stamp desc
-                           ''',(account_number,))
-            results = cursor.fetchall()
-            connection.commit()
-            cursor.close()
-            logs =[]
-            for row in results:
-                logs.append({
-                    "id":row[0],
-                    "holder_name":row[1],
-                    "action":row[2],
-                    "amount" :row[3],
-                    "time_stamp":row[4]
-                })
-            return logs
-        except Exception as error:
-            print(f'Error occured in log in{account_number} actions as {error}')
-            return None
-
-    @staticmethod
-    def get_all_audit_log():
-        connection = connect_to_database()
-        if not connection:
-            return []
-        try:
-            cursor = connection.cursor()
-            cursor.execute('''
-                           select id, holder_name, action, amount, time_stamp from audit
-                           order by time_stamp desc
-                           ''')
-            results = cursor.fetchall()
-            connection.commit()
-            cursor.close()
-            logs =[]
-            for row in results:
-                logs.append({
-                    "id":row[0],
-                    "holder_name":row[1],
-                    "action":row[2],
-                    "amount" :row[3],
-                    "time_stamp":row[4]
-                })
-            return logs
-        except Exception as error:
-            print(f'Error occured in all logs audits as {error}')
-            return None
-    
-    @staticmethod
-    def clear_single_audit_log(account_number):
-        connection = connect_to_database()
-        if not connection:
-            return []
-        try:
-            cursor = connection.cursor()
-            cursor.execute('''
-                           delete from audit where account_number = %s
-                           ''',(account_number,))
-           
-            connection.commit()
-            cursor.close()
-            return True
-        except Exception as error:
-            print(f'Error occured in delete log in{account_number} audits as {error}')
-            return None
-
-    @staticmethod
-    def clear_all_audit_log():
-        connection = connect_to_database()
-        if not connection:
-            return []
-        try:
-            cursor = connection.cursor()
-            cursor.execute('''
-                           delete from audit
-                           ''')
-            connection.commit()
-            cursor.close()
-            return True
-        except Exception as error:
-            print(f'Error occured in clear all audits as {error}')
-            return None
-    
-
-#banksystem class
-
-class BankSystem:
-    def __init__(self):
-        result = initilize_tables()
-        print("Table initialization result:", result)
-
-        if not result:
-            raise Exception("Database tables could not be initialized")
-    def create_account(self, name, pin):
-        account = Account(name, pin)
-        if account.save_to_db():
-            Audit.log_action(account.get_account_number(), account.get_name(),"account creatd",0.0)
-            return account
-        return None
-    def read_account(self, account_number, pin):
-        account = Account.load_from_db(account_number, pin)
-        if account:
-            Audit.log_action(
-                account_number,account.get_name(), "Details Checked",0.0 )
-            return account
-        return None
-        
-    def update_account(self, account):
-        return account.save_to_db()
-    
-    def delete_account(self, account_number, pin):
-        account = Account.load_from_db(account_number, pin)
-        if account:
-            success = account.delete_from_db()
-            if success:
-                Audit.log_action(
-                account_number,account.get_name(), "Account Deleted",0.0 )
-            return True
-        return False
-   
-    def deposit(self, account_number, pin,amount):
-        account = Account.load_from_db(account_number, pin)
-        if account and account.deposit(amount):
-            if account.save_to_db():
-                Audit.log_action(
-                account_number,account.get_name(), "amount deposited",amount )
-                return True
-        return False
-    
-    def withdraw(self, account_number, pin,amount):
-        account = Account.load_from_db(account_number, pin)
-        if account and account.withdraw(amount):
-            if account.save_to_db():
-                Audit.log_action(
-                account_number,account.get_name(), "amount withdrawn",amount )
-                return True
-        return False
-    
-    def get_account_balance(self, account_number, pin):
-            account = Account.load_from_db(account_number, pin)
-            if account:
-                Audit.log_action(
-                    account_number,account.get_name(), "Balance Checked",0.0)
-                return account.get_balance()
-            return None
-    
-    def get_single_audit_logs(self, account_number):
-                return Audit.get_single_audit_log(account_number)
-        
-    def get_all_audit_logs(self):
-                return Audit.get_all_audit_log()
-            
-    def clear_single_audit_logs(self, account_number):
-                return Audit.clear_single_audit_log(account_number)
-        
-    def clear_all_audit_logs(self):
-                return Audit.clear_all_audit_log()
-            
-    
-        
-# valid amount input
-def get_valid_amount(prompt):
-    while True:
-        try:
-            amount = float(input(prompt))
-            if amount<= 0 :
-                print("amount must be greater than zero")
-                continue
-            return amount
-        except ValueError:
-            print("please enter a valid amount in numbers ")
+        if fresh:
+            st.session_state.account = fresh
 
 
+def get_logs():
+    if not st.session_state.account:
+        return []
 
-#CLI menu
-def create_account_cli(bank):
-    print("="*40)
-    print("Create New Account")
-    print("="*40)
-    name = input("Enter your name: ").strip()
-    if not name:
-        print("Name can not be empty/ignored.")
-        input("press enter to continue...")
-        return        
-    pin = input("Enter 4-digit pin: ").strip()
-    if len(pin) !=4 or not pin.isdigit():
-        print("PIN must be 4-digit number.")
-        input("Press enter to continue... ")
-        return
-    confirm_pin = input("confirm your PIN: ").strip()
-    if pin != confirm_pin:
-        print("PIN is not matching.")
-        print("Press enter to continue..")
-        return
-    account = bank.create_account(name,pin)
+    return bank.get_single_audit_logs(
+        st.session_state.account.get_account_number()
+    ) or []
+
+
+def do_login(account_number, pin):
+    account = bank.read_account(
+        account_number.strip(),
+        pin.strip()
+    )
+
     if account:
-        print(f"\nAccount successfully created")
-        print(f"\nAccount number: {account.get_account_number()}")
-        print(f"Save your Account Number and PIN securely")
-        
-        
+        st.session_state.account = account
+        st.session_state.pin = pin.strip()
+        st.session_state.page = "Dashboard"
+        st.session_state.created_account_number = None
+        st.toast("Welcome back. Login successful.")
+        time.sleep(.35)
+        st.rerun()
+
+    st.error("Invalid account number or PIN.")
+
+
+def do_logout():
+    st.session_state.account = None
+    st.session_state.pin = None
+    st.session_state.page = "Dashboard"
+    st.toast("You have been logged out.")
+    time.sleep(.25)
+    st.rerun()
+
+
+# ============================================================
+# HERO
+# ============================================================
+st.markdown(textwrap.dedent("""
+<div class="hero">
+    <div class="hero-content">
+        <div class="hero-badge">🔐 Secure Banking Platform</div>
+        <h1>🏦 Banking Management System</h1>
+        <p>
+            A clean digital banking experience for account management,
+            secure transactions, live balances, and complete activity history.
+        </p>
+    </div>
+</div>
+"""), unsafe_allow_html=True)
+
+
+# ============================================================
+# AUTHENTICATION SCREEN
+# ============================================================
+if not st.session_state.account:
+
+    # This placeholder intentionally comes BEFORE the form.
+    # Therefore a newly-created account number appears above the form,
+    # not below it.
+    created_placeholder = st.empty()
+
+    if st.session_state.created_account_number:
+        # Keep the success message as HTML, but render the account number
+        # with st.code() so Streamlit provides its built-in Copy button.
+        created_placeholder.markdown("""
+        <div class="account-created" style="margin-bottom:10px;">
+            <div class="account-created-label">✓ ACCOUNT CREATED SUCCESSFULLY</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.code(
+            str(st.session_state.created_account_number),
+            language=None
+        )
+
+        st.markdown("""
+        <div class="account-created account-created-bottom">
+            <div class="account-created-note">
+                ⚠ Save this account number securely. You need it to sign in.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    auth_left, auth_right = st.columns(
+        [1.05, 1],
+        gap="large"
+    )
+
+    with auth_left:
+        st.markdown(
+        """
+        <div class="auth-surface">
+            <div class="auth-title">Banking without the clutter.</div>
+            <div class="auth-copy">
+                Everything important is available from one focused dashboard.
+                No unnecessary screens, no confusing visual hierarchy.
+            </div>
+            <div class="feature-list">
+                <div class="feature">
+                    <div class="feature-icon">🔐</div>
+                    <div class="feature-text">
+                        <strong>PIN-protected access</strong>
+                        <span>Secure authentication using your existing banking backend.</span>
+                    </div>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">⚡</div>
+                    <div class="feature-text">
+                        <strong>Instant transactions</strong>
+                        <span>Deposit and withdraw funds directly from your account.</span>
+                    </div>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">📊</div>
+                    <div class="feature-text">
+                        <strong>Clear financial overview</strong>
+                        <span>Balance, deposits, withdrawals and recent activity at a glance.</span>
+                    </div>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🧾</div>
+                    <div class="feature-text">
+                        <strong>Complete activity history</strong>
+                        <span>Review the audit records generated by your banking system.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    with auth_right:
+        login_tab, create_tab = st.tabs(["🔐 Sign In", "✨ Create Account"])
+
+        with login_tab:
+            st.markdown(textwrap.dedent("""
+            <div class="login-panel">
+                <div class="login-title">Welcome back</div>
+                <div style="color:#8191a5;font-size:13px;margin-bottom:20px;">
+                    Sign in to access your banking dashboard.
+                </div>
+            """), unsafe_allow_html=True)
+
+            account_number = st.text_input(
+                "Account Number",
+                placeholder="Enter your account number",
+                key="login_account"
+            )
+
+            pin = st.text_input(
+                "4-digit PIN",
+                type="password",
+                max_chars=4,
+                placeholder="••••",
+                key="login_pin"
+            )
+
+            if st.button(
+                "Sign In Securely  →",
+                use_container_width=True,
+                type="primary",
+                key="signin_button"
+            ):
+                if not account_number.strip():
+                    st.warning("Enter your account number.")
+                elif len(pin) != 4 or not pin.isdigit():
+                    st.warning("PIN must contain exactly 4 digits.")
+                else:
+                    with st.spinner("Verifying your credentials..."):
+                        time.sleep(.35)
+                        do_login(account_number, pin)
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with create_tab:
+            st.markdown(textwrap.dedent("""
+            <div class="login-panel">
+                <div class="login-title">Open a new account</div>
+                <div style="color:#8191a5;font-size:13px;margin-bottom:20px;">
+                    Create your account in a few seconds.
+                </div>
+            """), unsafe_allow_html=True)
+
+            name = st.text_input(
+                "Full Name",
+                placeholder="Enter your name",
+                key="create_name"
+            )
+
+            new_pin = st.text_input(
+                "Create 4-digit PIN",
+                type="password",
+                max_chars=4,
+                placeholder="••••",
+                key="create_pin"
+            )
+
+            confirm_pin = st.text_input(
+                "Confirm PIN",
+                type="password",
+                max_chars=4,
+                placeholder="••••",
+                key="confirm_pin"
+            )
+
+            if st.button(
+                "Create Account  →",
+                use_container_width=True,
+                type="primary",
+                key="create_button"
+            ):
+                if not name.strip():
+                    st.warning("Name cannot be empty.")
+                elif len(new_pin) != 4 or not new_pin.isdigit():
+                    st.warning("PIN must contain exactly 4 digits.")
+                elif new_pin != confirm_pin:
+                    st.error("PINs do not match.")
+                else:
+                    with st.spinner("Creating your account..."):
+                        time.sleep(.35)
+                        new_account = bank.create_account(
+                            name.strip(),
+                            new_pin
+                        )
+
+                    if new_account:
+                        st.session_state.created_account_number = (
+                            new_account.get_account_number()
+                        )
+                        created_placeholder.empty()
+                        st.rerun()
+                    else:
+                        st.error("Account creation failed.")
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown(textwrap.dedent("""
+    <div class="footer">
+        MyBank • Python + PostgreSQL • Streamlit
+    </div>
+    """), unsafe_allow_html=True)
+
+    st.stop()
+
+
+# ============================================================
+# LOGGED-IN STATE
+# ============================================================
+account = st.session_state.account
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+with st.sidebar:
+    st.markdown(
+        '<div class="sidebar-brand">🏦 MyBank</div>',
+        unsafe_allow_html=True
+    )
+
+    st.markdown(textwrap.dedent(f"""
+    <div class="sidebar-account">
+        <div class="sidebar-name">{account.get_name()}</div>
+        <div class="sidebar-number">{account.get_account_number()}</div>
+        <div class="sidebar-status">● SESSION ACTIVE</div>
+    </div>
+    """), unsafe_allow_html=True)
+
+    navigation = {
+        "Overview": "Dashboard",
+        "Deposit": "Deposit",
+        "Withdraw": "Withdraw",
+        "Transactions": "Transactions",
+        "Account Settings": "Account",
+    }
+
+    for label, page in navigation.items():
+        icon = {
+            "Overview": "⌂",
+            "Deposit": "＋",
+            "Withdraw": "−",
+            "Transactions": "▤",
+            "Account Settings": "⚙",
+        }[label]
+
+        if st.button(
+            f"{icon}  {label}",
+            use_container_width=True,
+            key=f"sidebar_{page}"
+        ):
+            st.session_state.page = page
+            st.rerun()
+
+    st.markdown(
+        '<div class="sidebar-divider"></div>',
+        unsafe_allow_html=True
+    )
+
+    refresh_col, logout_col = st.columns(2)
+
+    with refresh_col:
+        if st.button(
+            "↻ Refresh",
+            use_container_width=True,
+            key="sidebar_refresh"
+        ):
+            refresh_account()
+            st.toast("Account data refreshed.")
+            time.sleep(.25)
+            st.rerun()
+
+    with logout_col:
+        if st.button(
+            "Logout",
+            use_container_width=True,
+            key="sidebar_logout"
+        ):
+            do_logout()
+
+
+# ============================================================
+# DASHBOARD
+# ============================================================
+if st.session_state.page == "Dashboard":
+
+    refresh_account()
+    account = st.session_state.account
+    logs = get_logs()
+
+    st.markdown(
+        f'<div class="page-heading">Welcome back, {account.get_name()}</div>',
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        f'<div class="page-subtitle">'
+        f'Account {account.get_account_number()} · '
+        f'{datetime.now().strftime("%d %b %Y, %I:%M %p")}'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
+    balance = account.get_balance()
+
+    deposits = sum(
+        float(log["amount"] or 0)
+        for log in logs
+        if "deposit" in str(log["action"]).lower()
+    )
+
+    withdrawals = sum(
+        float(log["amount"] or 0)
+        for log in logs
+        if "withdraw" in str(log["action"]).lower()
+    )
+
+    metric_1, metric_2, metric_3 = st.columns(
+        3,
+        gap="medium"
+    )
+
+    with metric_1:
+        st.markdown(textwrap.dedent(f"""
+        <div class="metric">
+            <div class="metric-label">Available Balance</div>
+            <div class="metric-value">{money(balance)}</div>
+        </div>
+        """), unsafe_allow_html=True)
+
+    with metric_2:
+        st.markdown(textwrap.dedent(f"""
+        <div class="metric">
+            <div class="metric-label">Total Deposited</div>
+            <div class="metric-value cyan">{money(deposits)}</div>
+        </div>
+        """), unsafe_allow_html=True)
+
+    with metric_3:
+        st.markdown(textwrap.dedent(f"""
+        <div class="metric">
+            <div class="metric-label">Total Withdrawn</div>
+            <div class="metric-value orange">{money(withdrawals)}</div>
+        </div>
+        """), unsafe_allow_html=True)
+
+    st.markdown(
+        '<div class="page-heading" style="margin-top:34px;">Quick Actions</div>',
+        unsafe_allow_html=True
+    )
+
+    action_1, action_2, action_3 = st.columns(
+        3,
+        gap="medium"
+    )
+
+    with action_1:
+        if st.button(
+            "Deposit Money  →",
+            use_container_width=True,
+            key="dashboard_deposit"
+        ):
+            st.session_state.page = "Deposit"
+            st.rerun()
+
+    with action_2:
+        if st.button(
+            "Withdraw Money  →",
+            use_container_width=True,
+            key="dashboard_withdraw"
+        ):
+            st.session_state.page = "Withdraw"
+            st.rerun()
+
+    with action_3:
+        if st.button(
+            "View Transactions  →",
+            use_container_width=True,
+            key="dashboard_transactions"
+        ):
+            st.session_state.page = "Transactions"
+            st.rerun()
+
+    st.markdown(
+        '<div class="page-heading" style="margin-top:34px;">Recent Activity</div>',
+        unsafe_allow_html=True
+    )
+
+    if logs:
+        for index, log in enumerate(logs[:6]):
+            action = str(log["action"])
+            amount = float(log["amount"] or 0)
+            timestamp = log["time_stamp"]
+
+            if hasattr(timestamp, "strftime"):
+                timestamp = timestamp.strftime(
+                    "%d %b %Y · %I:%M %p"
+                )
+
+            lower_action = action.lower()
+
+            if "deposit" in lower_action:
+                icon = "↑"
+                color = "#55e0b6"
+                sign = "+"
+            elif "withdraw" in lower_action:
+                icon = "↓"
+                color = "#fb923c"
+                sign = "−"
+            elif "deleted" in lower_action:
+                icon = "×"
+                color = "#fb7185"
+                sign = ""
+            else:
+                icon = "•"
+                color = "#4bd7ef"
+                sign = ""
+
+            st.markdown(textwrap.dedent(f"""
+            <div class="transaction" style="animation-delay:{index * .05}s;">
+                <div class="transaction-main">
+                    <div class="transaction-action">
+                        <span style="color:{color};font-size:18px;">{icon}</span>
+                        &nbsp;{action}
+                    </div>
+                    <div class="transaction-time">{timestamp}</div>
+                </div>
+                <div class="transaction-amount" style="color:{color};">
+                    {sign}{money(amount)}
+                </div>
+            </div>
+            """), unsafe_allow_html=True)
     else:
-        print(f"\nAccount not created , try again.")
+        st.markdown(textwrap.dedent("""
+        <div class="notice">
+            No activity yet. Your deposits, withdrawals and account actions
+            will appear here.
+        </div>
+        """), unsafe_allow_html=True)
 
-    input("press enter to continue...")
 
-#check balance
-def check_balance_cli(bank,account,pin):
-    print("="*40)
-    print("Check your balance")
-    print("="*40)
-    name = input("Enter your name: ").strip()
-    balance = bank.get_account_balance(account.get_account_number(),pin)
-    
-    if balance is not None:
-        print(f"\nCurrent Balance: {balance:.2f}")       
-        
-    else:
-        print(f"\nError checking balance , try again.")
+# ============================================================
+# DEPOSIT
+# ============================================================
+elif st.session_state.page == "Deposit":
 
-    input("press enter to continue...")
-    
+    st.markdown(
+        '<div class="page-heading">Deposit Funds</div>',
+        unsafe_allow_html=True
+    )
 
-def deposit_money_cli(bank,account,pin):
-    print("="*40)
-    print("Deposit Money")
-    print("="*40)
-    amount = get_valid_amount("Enter deposit amount: ")
-    if bank.deposit(account.get_account_number(),pin, amount):
-        print(f"{amount:.2f} successfully deposited") 
-        balance= bank.get_account_balance(account.get_account_number(),pin)
-        if balance is not None:
-            print(f"New balance: {balance:.2f}") 
-        else:
-            print("Error checking new balance.")  
-    else:
-        print(f"\nError depositing balance , try again.")
+    st.markdown(
+        '<div class="page-subtitle">Add money to your account securely.</div>',
+        unsafe_allow_html=True
+    )
 
-    input("press enter to continue...")
-        
+    left, right = st.columns(
+        [1.15, .85],
+        gap="large"
+    )
 
-def withdraw_money_cli(bank,account,pin):
-    print("="*40)
-    print("withdraw Money")
-    print("="*40)
-    
-    amount = get_valid_amount("Enter withdraw amount: ")
-    if bank.withdraw(account.get_account_number(),pin, amount):
-        print(f"{amount:.2f} successfully withdrawn") 
-        balance= bank.get_account_balance(account.get_account_number(),pin)
-        if balance is not None:
-            print(f"New balance: {balance:.2f}") 
-        else:
-            print("Error checking balance")
-        
-    else:
-        print(f"\nError withdrawning balance , try again.")
+    with left:
+        st.markdown(textwrap.dedent("""
+        <div class="surface">
+            <div class="surface-title">Deposit amount</div>
+            <div class="surface-copy" style="margin-bottom:18px;">
+                Enter the amount you want to add to your current balance.
+            </div>
+        """), unsafe_allow_html=True)
 
-    input("press enter to continue...")
+        amount = st.number_input(
+            "Amount (₹)",
+            min_value=1.0,
+            step=100.0,
+            format="%.2f",
+            key="deposit_amount"
+        )
 
-def transaction_history_cli(bank,account,pin):
-    print("="*40)
-    print("Account Transactions")
-    print("="*40)
-    logs = bank.get_single_audit_logs(account.get_account_number())
+        if st.button(
+            "Deposit Securely  →",
+            use_container_width=True,
+            type="primary",
+            key="deposit_submit"
+        ):
+            with st.spinner("Processing deposit..."):
+                time.sleep(.35)
+                success = bank.deposit(
+                    account.get_account_number(),
+                    st.session_state.pin,
+                    amount
+                )
+
+            if success:
+                refresh_account()
+                st.toast(
+                    f"{money(amount)} deposited successfully."
+                )
+                time.sleep(.35)
+                st.rerun()
+            else:
+                st.error("Deposit failed. Please try again.")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with right:
+        refresh_account()
+        st.markdown(textwrap.dedent(f"""
+        <div class="metric">
+            <div class="metric-label">Current Balance</div>
+            <div class="metric-value">{money(account.get_balance())}</div>
+        </div>
+        <div style="height:14px;"></div>
+        <div class="notice">
+            Your transaction will be recorded in the existing audit table.
+        </div>
+        """), unsafe_allow_html=True)
+
+
+# ============================================================
+# WITHDRAW
+# ============================================================
+elif st.session_state.page == "Withdraw":
+
+    st.markdown(
+        '<div class="page-heading">Withdraw Funds</div>',
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        '<div class="page-subtitle">Withdraw available funds from your account.</div>',
+        unsafe_allow_html=True
+    )
+
+    left, right = st.columns(
+        [1.15, .85],
+        gap="large"
+    )
+
+    with left:
+        st.markdown(textwrap.dedent("""
+        <div class="surface">
+            <div class="surface-title">Withdrawal amount</div>
+            <div class="surface-copy" style="margin-bottom:18px;">
+                You can withdraw only an amount that is available in your balance.
+            </div>
+        """), unsafe_allow_html=True)
+
+        amount = st.number_input(
+            "Amount (₹)",
+            min_value=1.0,
+            step=100.0,
+            format="%.2f",
+            key="withdraw_amount"
+        )
+
+        if st.button(
+            "Withdraw Securely  →",
+            use_container_width=True,
+            type="primary",
+            key="withdraw_submit"
+        ):
+            refresh_account()
+
+            if amount > account.get_balance():
+                st.error(
+                    f"Insufficient balance. Available: "
+                    f"{money(account.get_balance())}"
+                )
+            else:
+                with st.spinner("Processing withdrawal..."):
+                    time.sleep(.35)
+                    success = bank.withdraw(
+                        account.get_account_number(),
+                        st.session_state.pin,
+                        amount
+                    )
+
+                if success:
+                    refresh_account()
+                    st.toast(
+                        f"{money(amount)} withdrawn successfully."
+                    )
+                    time.sleep(.35)
+                    st.rerun()
+                else:
+                    st.error("Withdrawal failed. Please try again.")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with right:
+        refresh_account()
+        st.markdown(textwrap.dedent(f"""
+        <div class="metric">
+            <div class="metric-label">Available Balance</div>
+            <div class="metric-value">{money(account.get_balance())}</div>
+        </div>
+        <div style="height:14px;"></div>
+        <div class="notice">
+            Withdrawals cannot exceed your current available balance.
+        </div>
+        """), unsafe_allow_html=True)
+
+
+# ============================================================
+# TRANSACTIONS
+# ============================================================
+elif st.session_state.page == "Transactions":
+
+    st.markdown(
+        '<div class="page-heading">Transaction History</div>',
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        '<div class="page-subtitle">A complete view of your account activity.</div>',
+        unsafe_allow_html=True
+    )
+
+    logs = get_logs()
+
     if not logs:
-        print("No transaction found")
+        st.markdown(textwrap.dedent("""
+        <div class="surface">
+            <div class="surface-title">No transactions yet</div>
+            <div class="surface-copy">
+                Your account activity will appear here after your first transaction.
+            </div>
+        </div>
+        """), unsafe_allow_html=True)
     else:
-        for log in logs:
-            print(f"{log['time_stamp']} {log['action']}  - {log['amount']:.2f} by {log['holder_name']}")
-    input("Press enter to continue..")
+        for index, log in enumerate(logs):
+            action = str(log["action"])
+            amount = float(log["amount"] or 0)
+            timestamp = log["time_stamp"]
 
-def update_account_cli(bank,account,pin):
-    print("="*40)
-    print("Update Account Info")
-    print("="*40)
-    new_name = input("Enter your name: ").strip()
-    if new_name:
-        account.set_name(new_name)
-        if bank.update_account(account):
-            Audit.log_action(account.get_account_number(), account.get_name(),"Account Info updated", 0.0)
-            print("name updated Successfully")
-        else:
-            print("error updating account")
-    else:    
-        print("no changes made.")
+            if hasattr(timestamp, "strftime"):
+                timestamp = timestamp.strftime(
+                    "%d %B %Y · %I:%M:%S %p"
+                )
 
-    input("press enter to continue...")
-def change_pin_logout_cli(bank,account,pin):
-    print("="*40)
-    print("Update Account PIN")
-    print("="*40)
-    old_pin = input("Enter current pin: ").strip()
-    if old_pin !=pin:
-        print("Inccorect current pin")
-        print("Press enter to continue...")
-        return False
-    
-    
-    new_pin = input("Enter 4digit new pin ").strip()
-    if len(new_pin) !=4 or not new_pin.isdigit():
-        print("PIN must be 4-digit number.")
-        input("Press enter to continue... ")
-        return
-    confirm_pin = input("confirm your PIN: ").strip()
-    if new_pin != confirm_pin:
-        print("PIN is not matching.")
-        print("Press enter to continue..")
-        
-    account.set_pin(new_pin)
-    if bank.update_account(account):
-            Audit.log_action(account.get_account_number(), account.get_name(),"Account PIN updated", 0.0)
-            print("PIN updated Successfully, you will be logged out")
-            return True
-    
-    print("Error updating the pin.")
-    input("press enter to continue...")
-    
+            lower_action = action.lower()
 
-def delete_account_cli(bank,account,pin):
-    print("="*40)
-    print("Close Account")
-    print("="*40)
-    confirm = input("are your sure, you want to delete ths account? (yes/no) ").strip().lower()
-    if confirm !="yes":
-        print("Account Deletion Cancelled.")
-        input("Press enter to continue..")
-        return False
-    
-    
-    re_pin = input("re-enter your Pin to confirm: ").strip()
-    if re_pin != pin:
-        print("PIN is not matching account not deleted.")
-        print("Press enter to continue..")
-    if bank.delete_account(account.get_account_number(),pin):
-        print("Account closed successfully.")
-        print("press enter to continue...")
-    print("Error closing account pin, try again..")
-    input("Press enter to continue.")
-    return False    
-        
-def login_account_cli(bank):
-    print("="*40)
-    print("Create New Account")
-    print("="*40)
-    account_number = input("Enter your account_number: ").strip()
-    if not account_number:
-        print("account number can not be empty/ignored.")
-        input("press enter to continue...")
-        return        
-    pin = input("Enter 4-digit pin: ").strip()
-    account = bank.read_account(account_number,pin)
-    
-    if not account:
-        print("Wrong Credientials.")
-        input("Press enter to continue... ")
-        return
-    
-    while True:
-        print("="*40)
-        print(f"Welcome, {account.get_name()}!")
-        print(f"Account Number:  , {account.get_account_number()}!")
-        print("="*40)
-        print('''
-              1. Check Balance
-              2. Deposit Balance
-              3. Withdraw Balance
-              4. Trnsaction History
-              5. Update Account Info
-              6. Change PIN
-              7. Delete Account
-              8. logout''')
-        
-        print("="*40)
-        choice = int(input("Enter your choice(0-6):"))
-        if choice==1:
-            check_balance_cli(bank,account,pin)
-        elif choice ==2:
-            deposit_money_cli(bank, account,pin)
-        elif choice == 3:
-            withdraw_money_cli(bank, account,pin)
-        elif choice == 4:
-            transaction_history_cli(bank, account,pin)
-        elif choice == 5:
-            update_account_cli(bank, account,pin)
-        elif choice ==6:
-            if change_pin_logout_cli(bank,account,pin):
-                break
-        elif choice ==7:
-            if delete_account_cli(bank,account,pin):
-                break   
-        elif choice ==9:
-            print("Thank you so much for using our services, do visit again.")
-            exit()
-        else:
-            print("please provide a valid choice , try again.")
-        
-                
-                
+            if "deposit" in lower_action:
+                icon = "↑"
+                color = "#55e0b6"
+                sign = "+"
+            elif "withdraw" in lower_action:
+                icon = "↓"
+                color = "#fb923c"
+                sign = "−"
+            elif "balance" in lower_action:
+                icon = "•"
+                color = "#4bd7ef"
+                sign = ""
+            else:
+                icon = "•"
+                color = "#aab7c8"
+                sign = ""
 
-#main menu of CLI
-def main_menu_cli():
-    bank = BankSystem()
-    
-    while True:
-        print("="*40)
-        print("Bank Management System")
-        print("="*40)
-        print('''
-              1. New Account
-              2. Login Account
-              ''')
-        # print("="*10, "Admins Only ","="*10)
-        # print('''
-        #       3. View Single Audit Log
-        #       4. View All Audit Logs
-        #       5. Clear Single Audit Log
-        #       6.Clear All Audit Logs''')
-        print("0.Exit")
-        print("="*40)
-        choice = int(input("Enter your choice(0-6):"))
-        if choice==1:
-            create_account_cli(bank)
-        elif choice ==2:
-            login_account_cli(bank)
-        elif choice ==0:
-            print("Thank you so much for using our services, do visit again.")
-        else:
-            print("please provide a valid choice , try again.")
-        
+            st.markdown(textwrap.dedent(f"""
+            <div class="transaction" style="animation-delay:{index * .035}s;">
+                <div class="transaction-main">
+                    <div class="transaction-action">
+                        <span style="color:{color};font-size:20px;">{icon}</span>
+                        &nbsp;{action}
+                    </div>
+                    <div class="transaction-time">{timestamp}</div>
+                </div>
+                <div class="transaction-amount" style="color:{color};">
+                    {sign}{money(amount)}
+                </div>
+            </div>
+            """), unsafe_allow_html=True)
 
-if __name__=="__main__":
-    main_menu_cli()
 
+# ============================================================
+# ACCOUNT SETTINGS
+# ============================================================
+elif st.session_state.page == "Account":
+
+    st.markdown(
+        '<div class="page-heading">Account Settings</div>',
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        '<div class="page-subtitle">Manage your profile and account security.</div>',
+        unsafe_allow_html=True
+    )
+
+    info_tab, name_tab, pin_tab, close_tab = st.tabs([
+        "Account Info",
+        "Update Name",
+        "Change PIN",
+        "Close Account",
+    ])
+
+    with info_tab:
+        refresh_account()
+
+        st.markdown(textwrap.dedent("""
+        <div class="surface">
+            <div class="surface-title">Account information</div>
+        """), unsafe_allow_html=True)
+
+        info_1, info_2 = st.columns(2, gap="large")
+
+        with info_1:
+            st.markdown(
+                f"**Account Holder**  \n"
+                f"<span style='color:#5ee7bd;font-size:19px;font-weight:700;'>"
+                f"{account.get_name()}</span>",
+                unsafe_allow_html=True
+            )
+
+        with info_2:
+            st.markdown(
+                f"**Account Number**  \n"
+                f"<span style='color:#4bd7ef;font-family:monospace;"
+                f"font-size:17px;font-weight:700;overflow-wrap:anywhere;'>"
+                f"{account.get_account_number()}</span>",
+                unsafe_allow_html=True
+            )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        st.markdown(
+            f"**Current Balance**  \n"
+            f"<span style='color:#55e0b6;font-size:27px;font-weight:700;'>"
+            f"{money(account.get_balance())}</span>",
+            unsafe_allow_html=True
+        )
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with name_tab:
+        st.markdown(textwrap.dedent("""
+        <div class="surface">
+            <div class="surface-title">Update your name</div>
+            <div class="surface-copy" style="margin-bottom:18px;">
+                Change the account holder name stored in your account.
+            </div>
+        """), unsafe_allow_html=True)
+
+        new_name = st.text_input(
+            "New Name",
+            value=account.get_name(),
+            key="new_account_name"
+        )
+
+        if st.button(
+            "Save Name",
+            use_container_width=True,
+            type="primary",
+            key="update_name"
+        ):
+            if not new_name.strip():
+                st.warning("Name cannot be empty.")
+            else:
+                account.set_name(new_name.strip())
+
+                if bank.update_account(account):
+                    Audit.log_action(
+                        account.get_account_number(),
+                        account.get_name(),
+                        "Account Info Updated",
+                        0.0
+                    )
+                    refresh_account()
+                    st.toast("Account name updated.")
+                    time.sleep(.35)
+                    st.rerun()
+                else:
+                    st.error("Could not update the account.")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with pin_tab:
+        st.markdown(textwrap.dedent("""
+        <div class="surface">
+            <div class="surface-title">Change your PIN</div>
+            <div class="surface-copy" style="margin-bottom:18px;">
+                Your new PIN must contain exactly four digits.
+            </div>
+        """), unsafe_allow_html=True)
+
+        old_pin = st.text_input(
+            "Current PIN",
+            type="password",
+            max_chars=4,
+            key="old_pin"
+        )
+
+        new_pin = st.text_input(
+            "New 4-digit PIN",
+            type="password",
+            max_chars=4,
+            key="new_pin"
+        )
+
+        confirm_pin = st.text_input(
+            "Confirm New PIN",
+            type="password",
+            max_chars=4,
+            key="confirm_new_pin"
+        )
+
+        if st.button(
+            "Update PIN",
+            use_container_width=True,
+            type="primary",
+            key="update_pin"
+        ):
+            if old_pin != st.session_state.pin:
+                st.error("Current PIN is incorrect.")
+            elif len(new_pin) != 4 or not new_pin.isdigit():
+                st.error("New PIN must contain exactly 4 digits.")
+            elif new_pin != confirm_pin:
+                st.error("New PINs do not match.")
+            else:
+                account.set_pin(new_pin)
+
+                if bank.update_account(account):
+                    Audit.log_action(
+                        account.get_account_number(),
+                        account.get_name(),
+                        "PIN Updated",
+                        0.0
+                    )
+                    st.session_state.pin = new_pin
+                    st.toast("PIN updated successfully.")
+                    time.sleep(.35)
+                    st.rerun()
+                else:
+                    st.error("Could not update the PIN.")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with close_tab:
+        st.markdown(textwrap.dedent("""
+        <div class="danger-zone">
+            <div class="danger-zone-title">Permanent account closure</div>
+            <div class="danger-zone-copy">
+                Closing your account permanently removes the account and its
+                audit records using your existing backend logic. This action
+                cannot be undone.
+            </div>
+        </div>
+        """), unsafe_allow_html=True)
+
+        st.write("")
+
+        confirm_delete = st.checkbox(
+            "I understand that this action cannot be undone.",
+            key="confirm_delete"
+        )
+
+        delete_pin = st.text_input(
+            "Enter your PIN to confirm",
+            type="password",
+            max_chars=4,
+            key="delete_pin"
+        )
+
+        if st.button(
+            "Permanently Close Account",
+            use_container_width=True,
+            key="delete_account"
+        ):
+            if not confirm_delete:
+                st.warning("Please confirm the checkbox first.")
+            elif delete_pin != st.session_state.pin:
+                st.error("Incorrect PIN.")
+            else:
+                with st.spinner("Closing account securely..."):
+                    time.sleep(.5)
+                    success = bank.delete_account(
+                        account.get_account_number(),
+                        st.session_state.pin
+                    )
+
+                if success:
+                    st.session_state.account = None
+                    st.session_state.pin = None
+                    st.session_state.page = "Dashboard"
+                    st.toast(
+                        "Account closed successfully."
+                    )
+                    time.sleep(.5)
+                    st.rerun()
+                else:
+                    st.error("Could not close the account.")
+
+
+# ============================================================
+# FOOTER
+# ============================================================
+st.markdown(textwrap.dedent("""
+<div class="footer">
+    <strong style="color:#8292a7;">MyBank</strong>
+    &nbsp;·&nbsp; Banking Management System
+    &nbsp;·&nbsp; Python + PostgreSQL + Streamlit
+</div>
+"""), unsafe_allow_html=True)

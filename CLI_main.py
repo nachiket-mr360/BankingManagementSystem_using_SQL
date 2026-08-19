@@ -147,10 +147,12 @@ class Account:
     
     def delete_from_db(self):
         connection = connect_to_database()
+        
         if not connection:
             return False
         try:
             cursor = connection.cursor()
+            cursor.execute("delete from audit where account_number = %s",(self.__account_number,))
             cursor.execute('delete from accounts where account_number = %s',(self.__account_number,))
             connection.commit()
             cursor.close()
@@ -506,8 +508,27 @@ def change_pin_logout_cli(bank,account,pin):
     input("press enter to continue...")
     
 
-def logout_cli(bank,account,pin):
-    pass
+def delete_account_cli(bank,account,pin):
+    print("="*40)
+    print("Close Account")
+    print("="*40)
+    confirm = input("are your sure, you want to delete ths account? (yes/no) ").strip().lower()
+    if confirm !="yes":
+        print("Account Deletion Cancelled.")
+        input("Press enter to continue..")
+        return False
+    
+    
+    re_pin = input("re-enter your Pin to confirm: ").strip()
+    if re_pin != pin:
+        print("PIN is not matching account not deleted.")
+        print("Press enter to continue..")
+    if bank.delete_account(account.get_account_number(),pin):
+        print("Account closed successfully.")
+        print("press enter to continue...")
+    print("Error closing account pin, try again..")
+    input("Press enter to continue.")
+    return False    
         
 def login_account_cli(bank):
     print("="*40)
@@ -537,9 +558,9 @@ def login_account_cli(bank):
               3. Withdraw Balance
               4. Trnsaction History
               5. Update Account Info
-              6. Close Account
-              7. Change PIN
-              8. Logout''')
+              6. Change PIN
+              7. Delete Account
+              8. logout''')
         
         print("="*40)
         choice = int(input("Enter your choice(0-6):"))
@@ -553,11 +574,15 @@ def login_account_cli(bank):
             transaction_history_cli(bank, account,pin)
         elif choice == 5:
             update_account_cli(bank, account,pin)
-        elif choice == 6:
-            logout_cli(bank, account,pin)
-                
+        elif choice ==6:
+            if change_pin_logout_cli(bank,account,pin):
+                break
         elif choice ==7:
+            if delete_account_cli(bank,account,pin):
+                break   
+        elif choice ==9:
             print("Thank you so much for using our services, do visit again.")
+            exit()
         else:
             print("please provide a valid choice , try again.")
         
@@ -576,12 +601,6 @@ def main_menu_cli():
               1. New Account
               2. Login Account
               ''')
-        # print("="*10, "Admins Only ","="*10)
-        # print('''
-        #       3. View Single Audit Log
-        #       4. View All Audit Logs
-        #       5. Clear Single Audit Log
-        #       6.Clear All Audit Logs''')
         print("0.Exit")
         print("="*40)
         choice = int(input("Enter your choice(0-6):"))
@@ -591,6 +610,7 @@ def main_menu_cli():
             login_account_cli(bank)
         elif choice ==0:
             print("Thank you so much for using our services, do visit again.")
+            exit()
         else:
             print("please provide a valid choice , try again.")
         
